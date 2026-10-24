@@ -1,0 +1,38 @@
+name: Ошибка
+description: Не подключается, не листает экраны, неверные значения
+title: "[ошибка] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: model
+    attributes:
+      label: Модель счётчика
+      options: ["М2М-1С", "М2М-3Т", "другая"]
+    validations:
+      required: true
+  - type: input
+    id: esp
+    attributes:
+      label: Плата ESP32 и версия ESPHome
+      placeholder: "ESP32-S3, ESPHome 2026.10.0"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Что происходит и что ожидалось
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Блок m2m_display из YAML
+      render: yaml
+  - type: textarea
+    id: log
+    attributes:
+      label: Лог (уровень DEBUG, один обход экранов)
+      description: Уберите личные данные (MAC, серийный номер, SIM, IP).
+      render: text
+    validations:
+      required: true

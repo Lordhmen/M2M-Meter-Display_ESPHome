@@ -1,0 +1,37 @@
+name: Новый экран / незнакомые знаки
+description: Экран не распознаётся, значения нет или в логе «Незнакомый знак»
+title: "[экран] "
+labels: ["new screen"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо! Перед отправкой уберите из лога личные данные: MAC и серийный номер счётчика, SIM и IP (экран 1.6).
+  - type: dropdown
+    id: model
+    attributes:
+      label: Модель счётчика
+      options: ["М2М-1С", "М2М-3Т", "другая"]
+    validations:
+      required: true
+  - type: input
+    id: screen
+    attributes:
+      label: Какой экран (номер и название на счётчике)
+      placeholder: "11. ПАРАМЕТРЫ НАГР. → подменю «ТЕК. ЗНАЧ. А. МОЩ.»"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что показывает счётчик на этом экране (своими словами или фото)
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Строки лога
+      description: Строки «Экран «…»: значение …», «Незнакомый знак …», а лучше кадр целиком (log_frames: true, от FRAME BEGIN до FRAME END)
+      render: text
+    validations:
+      required: true

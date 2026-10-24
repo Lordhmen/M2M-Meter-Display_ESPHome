@@ -1,0 +1,132 @@
+# Пример: показания счётчика М2М-1С / М2М-3Т с экрана по Bluetooth.
+# ESP32 должна быть в радиусе Bluetooth от счётчика.
+# Лучше ESP32 с постоянным питанием: связь держится всё время, обход экранов — раз в час.
+
+esphome:
+  name: m2m-meter
+  friendly_name: Счётчик ЭЭ
+
+esp32:
+  board: esp32-s3-devkitc-1     # подойдёт любая ESP32 с Bluetooth (проверено на ESP32-S3 и ESP32-C3)
+  framework:
+    type: esp-idf
+
+logger:
+  level: DEBUG
+  logs:
+    esp32_ble_tracker: INFO
+    ble_device_base: INFO
+
+api:
+  encryption:
+    key: !secret api_key
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+external_components:
+  - source: github://Lordhmen/M2M-Meter-Display_ESPHome@main
+    components: [m2m_display]
+
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 300ms
+    window: 300ms
+    active: true
+    continuous: true
+
+ble_client:
+  # 00:00:00:00:00:00 — найти счётчик автоматически (по имени «M2M…» или сервису FFF0).
+  # Если рядом несколько счётчиков (щиток в подъезде!), в логе будет список — впишите сюда адрес своего.
+  - mac_address: "00:00:00:00:00:00"
+    id: meter_ble
+    auto_connect: true
+
+m2m_display:
+  id: meter_display
+  ble_client_id: meter_ble
+  update_interval: 1h        # как часто обходить экраны (обход — 2–3 минуты)
+  report_unknown: true       # описания новых экранов и незнакомые знаки — в лог (для issue)
+  found_meters:
+    name: Найденные счётчики (found)
+
+  # ---- Включайте только то, что нужно. Полный список — в README. ----
+  energy_import_total:
+    name: Показание счётчика (import)
+  energy_import_t1:
+    name: Показание по тарифу Т1 (t1)
+  energy_import_t2:
+    name: Показание по тарифу Т2 (t2)
+  current_tariff:
+    name: Текущий тариф (tariff)
+  energy_import_month:
+    name: Потреблено за месяц (month)
+  max_power_month:
+    name: Макс. мощность за месяц (max_month)
+  max_power_today:
+    name: Макс. мощность за сутки (max_today)
+  power_factor:
+    name: Коэффициент мощности (pf)
+  current:
+    name: Ток (current)
+  differential_current:
+    name: Дифференциальный ток (diff)
+  active_power:
+    name: Мощность активная (p)
+  frequency:
+    name: Частота сети (freq)
+  voltage:
+    name: Напряжение (voltage)
+  uptime:
+    name: Время работы счётчика (uptime)
+    every: 24                # не каждый обход, а раз в 24 обхода (раз в сутки)
+
+  # Только для М2М-3Т (по документации, не проверено — пришлите лог!):
+  # voltage_a:
+  #   name: Напряжение фаза A
+  # current_a:
+  #   name: Ток фаза A
+
+button:
+  - platform: template
+    name: Опросить счётчик сейчас
+    icon: mdi:refresh
+    on_press:
+      - component.update: meter_display
+  - platform: template
+    name: Экран вправо
+    icon: mdi:chevron-right
+    on_press:
+      - lambda: id(meter_display).press(2);
+  - platform: template
+    name: Экран влево
+    icon: mdi:chevron-left
+    on_press:
+      - lambda: id(meter_display).press(1);
+  - platform: template
+    name: Экран долго влево
+    icon: mdi:chevron-double-left
+    on_press:
+      - lambda: id(meter_display).press(3);
+  - platform: template
+    name: Экран долго вправо (только безопасные экраны)
+    icon: mdi:chevron-double-right
+    on_press:
+      - lambda: id(meter_display).press(4);   # на экранах 15 (реле) и 1.7 (модем) не сработает
+
+sensor:
+  - platform: template
+    name: Кадров экрана получено
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: return id(meter_display).frames_count();
+  - platform: template
+    name: Застываний картинки экрана
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: return id(meter_display).stale_count();
