@@ -96,7 +96,8 @@ Bluetooth-модуль счётчика отдаёт копию экрана (16
      live_view:
        timeout: 3min      # сам выключится, если никто не жмёт кнопки
    ```
-2. Скопируйте `m2m-display-card.js` в `/config/www/` и добавьте ресурс `/local/m2m-display-card.js?v=1.0.0`
+2. Установите карточку через HACS (**HACS → ⋮ → Пользовательские репозитории**, адрес этого репозитория, тип
+   «Dashboard»), либо вручную: скопируйте `dist/m2m-display-card.js` в `/config/www/` и добавьте ресурс `/local/m2m-display-card.js?v=1.0.0`
    (тип «JavaScript module») в **Настройки → Панели → Ресурсы**.
 3. Добавьте карточку:
    ```yaml
