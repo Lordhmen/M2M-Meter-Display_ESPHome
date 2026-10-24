@@ -243,6 +243,11 @@ void M2MDisplay::loop() {
       this->found_sensor_->publish_state(list);
   }
 
+  if (this->live_ && (int32_t) (now - this->live_until_ms_) > 0) {
+    ESP_LOGI(TAG, "Живой экран выключен: долго не было нажатий");
+    this->set_live(false);
+  }
+
   if (!this->ready_)
     return;
 
@@ -361,6 +366,8 @@ void M2MDisplay::on_frame_() {
   }
 
   this->read_values_(d);
+  if (this->live_)
+    this->publish_live_(d, this->live_force_);
   if (this->key_count_ == 2)
     this->report_(d, key);
   if (this->cycling_)
@@ -766,6 +773,10 @@ void M2MDisplay::update() {
   }
   if (this->cycling_)
     return;
+  if (this->live_) {
+    ESP_LOGD(TAG, "Обход экранов отложен: включён живой экран");
+    return;
+  }
   this->cycle_no_++;
   bool retry_absent = this->cycle_no_ % 24 == 0;  // раз в 24 обхода снова ищем «отсутствующие» экраны
   int cnt = 0;
@@ -1021,6 +1032,71 @@ void M2MDisplay::finish_cycle_(const char *why) {
              left.empty() ? "— " : left.c_str(), secs);
   for (auto &e : this->entries_)
     e.need = false;
+}
+
+// ---------------------------------------------------------------------------------------------
+// живой экран
+
+void LiveSwitch::write_state(bool state) {
+  if (this->parent_ != nullptr)
+    this->parent_->set_live(state);
+}
+
+void LiveButton::press_action() {
+  if (this->parent_ != nullptr)
+    this->parent_->press(this->code_);
+}
+
+void M2MDisplay::set_live(bool on) {
+  if (on == this->live_) {
+    if (this->live_switch_ != nullptr)
+      this->live_switch_->publish_state(on);
+    if (on)
+      this->live_touch_();
+    return;
+  }
+  this->live_ = on;
+  if (on) {
+    ESP_LOGI(TAG, "Живой экран включён");
+    this->live_touch_();
+    this->live_force_ = true;
+    if (this->cycling_)
+      this->finish_cycle_("включён живой экран");
+    if (this->have_frame_)
+      this->publish_live_(this->last_decoded_, true);
+  } else {
+    ESP_LOGI(TAG, "Живой экран выключен");
+  }
+  if (this->live_switch_ != nullptr)
+    this->live_switch_->publish_state(on);
+}
+
+// Кадр — 4 страницы по 160 байт; каждая уходит в свой текстовый сенсор в base64 (216 знаков < 255).
+void M2MDisplay::publish_live_(const ScreenData &d, bool force) {
+  for (int p = 0; p < 4; p++) {
+    const uint8_t *page = this->last_frame_ + p * 160;
+    if (!force && memcmp(page, this->live_sent_ + p * 160, 160) == 0)
+      continue;
+    memcpy(this->live_sent_ + p * 160, page, 160);
+    if (this->page_sensors_[p] != nullptr)
+      this->page_sensors_[p]->publish_state(base64_encode(page, 160));
+  }
+  this->live_force_ = false;
+  if (this->screen_text_sensor_ != nullptr) {
+    std::string t = d.title_sp;
+    if (!d.big.empty())
+      t += " — " + d.big + (d.small.empty() ? "" : "," + d.small);
+    for (auto &l : d.lines)
+      t += " · " + l.text;
+    if (t.size() > 250) {
+      size_t n = 250;
+      while (n > 0 && (t[n] & 0xC0) == 0x80)
+        n--;  // не резать букву UTF-8 пополам
+      t.resize(n);
+    }
+    if (force || this->screen_text_sensor_->state != t)
+      this->screen_text_sensor_->publish_state(t);
+  }
 }
 
 void M2MDisplay::log_frame_() {

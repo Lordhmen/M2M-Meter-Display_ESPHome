@@ -5,6 +5,8 @@
 #include "esphome/core/component.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/components/switch/switch.h"
+#include "esphome/components/button/button.h"
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 #include "decoder.h"
@@ -52,6 +54,30 @@ struct Entry {
   uint32_t visit{0};   // номер «посещения» экрана, на котором значение уже опубликовано
 };
 
+class M2MDisplay;
+
+// Выключатель «Живой экран»: пока включён, кадр экрана отправляется в HA (для карточки m2m-display-card)
+class LiveSwitch : public switch_::Switch {
+ public:
+  void set_parent(M2MDisplay *p) { this->parent_ = p; }
+
+ protected:
+  void write_state(bool state) override;
+  M2MDisplay *parent_{nullptr};
+};
+
+// Кнопка счётчика для карточки: 1 влево, 2 вправо, 3 долго влево, 4 долго вправо (только безопасные экраны)
+class LiveButton : public button::Button {
+ public:
+  void set_parent(M2MDisplay *p) { this->parent_ = p; }
+  void set_code(uint8_t c) { this->code_ = c; }
+
+ protected:
+  void press_action() override;
+  M2MDisplay *parent_{nullptr};
+  uint8_t code_{0};
+};
+
 class M2MDisplay : public PollingComponent, public ble_client::BLEClientNode, public espbt::ESPBTDeviceListener {
  public:
   void setup() override;
@@ -83,11 +109,20 @@ class M2MDisplay : public PollingComponent, public ble_client::BLEClientNode, pu
   // 4 долго вправо — только на экранах, где это открывает подменю просмотра.
   // На экранах 15 (реле нагрузки) и 1.7 (модем, выбор оператора) долгое «вправо» меняет настройки — запрещено.
   void press(uint8_t code) {
+    this->live_touch_();
     if (code == 1 || code == 2 || code == 3)
       this->pending_writes_.push_back(code);
     else if (code == 4)
       this->press_long_right_safe();
   }
+
+  // живой экран
+  void set_live_switch(LiveSwitch *s) { this->live_switch_ = s; }
+  void set_page_sensor(int i, text_sensor::TextSensor *s) { this->page_sensors_[i] = s; }
+  void set_screen_text_sensor(text_sensor::TextSensor *s) { this->screen_text_sensor_ = s; }
+  void set_live_timeout(uint32_t ms) { this->live_timeout_ms_ = ms; }
+  void set_live(bool on);
+  bool is_live() const { return this->live_; }
   bool press_long_right_safe();
 
   uint32_t frames_count() const { return this->frames_; }
@@ -200,6 +235,18 @@ class M2MDisplay : public PollingComponent, public ble_client::BLEClientNode, pu
   uint32_t markers_{0};
 
   std::deque<uint8_t> pending_writes_;
+
+  // живой экран
+  void live_touch_() { this->live_until_ms_ = millis() + this->live_timeout_ms_; }
+  void publish_live_(const ScreenData &d, bool force);
+  LiveSwitch *live_switch_{nullptr};
+  text_sensor::TextSensor *page_sensors_[4]{};
+  text_sensor::TextSensor *screen_text_sensor_{nullptr};
+  uint32_t live_timeout_ms_{180000};
+  uint32_t live_until_ms_{0};
+  bool live_{false};
+  bool live_force_{false};
+  uint8_t live_sent_[FRAME_SIZE]{};
 };
 
 }  // namespace m2m_display

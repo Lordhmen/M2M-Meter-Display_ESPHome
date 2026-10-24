@@ -10,7 +10,7 @@
 """
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import ble_client, esp32_ble_tracker, sensor, text_sensor
+from esphome.components import ble_client, button, esp32_ble_tracker, sensor, switch, text_sensor
 from esphome.const import (
     CONF_ID,
     DEVICE_CLASS_APPARENT_POWER,
@@ -37,7 +37,7 @@ from esphome.const import (
 )
 
 DEPENDENCIES = ["ble_client", "esp32_ble_tracker"]
-AUTO_LOAD = ["sensor", "text_sensor"]
+AUTO_LOAD = ["sensor", "text_sensor", "switch", "button"]
 CODEOWNERS = []
 
 m2m_ns = cg.esphome_ns.namespace("m2m_display")
@@ -45,6 +45,19 @@ M2MDisplay = m2m_ns.class_(
     "M2MDisplay", cg.PollingComponent, ble_client.BLEClientNode, esp32_ble_tracker.ESPBTDeviceListener
 )
 
+LiveSwitch = m2m_ns.class_("LiveSwitch", switch.Switch)
+LiveButton = m2m_ns.class_("LiveButton", button.Button)
+_BUTTONS = [  # ключ, код, имя, значок
+    ("button_left", 1, "Экран влево (m2m_left)", "mdi:chevron-left"),
+    ("button_right", 2, "Экран вправо (m2m_right)", "mdi:chevron-right"),
+    ("button_long_left", 3, "Экран долго влево (m2m_long_left)", "mdi:chevron-double-left"),
+    ("button_long_right", 4, "Экран долго вправо (m2m_long_right)", "mdi:chevron-double-right"),
+]
+
+CONF_LIVE_VIEW = "live_view"
+CONF_SWITCH = "switch"
+CONF_TIMEOUT = "timeout"
+CONF_SCREEN_TEXT = "screen_text"
 CONF_READ_INTERVAL = "read_interval"
 CONF_KEEPALIVE_INTERVAL = "keepalive_interval"
 CONF_LOG_FRAMES = "log_frames"
@@ -204,6 +217,27 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_FOUND_METERS): text_sensor.text_sensor_schema(
                 icon="mdi:bluetooth-audio", entity_category=ENTITY_CATEGORY_DIAGNOSTIC
             ),
+            # «Живой экран» для карточки m2m-display-card: копия экрана и кнопки в Home Assistant
+            cv.Optional(CONF_LIVE_VIEW): cv.Schema(
+                {
+                    cv.Optional(CONF_SWITCH, default={"name": "Живой экран (m2m_live)"}): switch.switch_schema(
+                        LiveSwitch, icon="mdi:monitor-eye", default_restore_mode="ALWAYS_OFF"
+                    ),
+                    cv.Optional(CONF_TIMEOUT, default="3min"): cv.positive_time_period_milliseconds,
+                    **{
+                        cv.Optional(f"page_{i}", default={"name": f"Кадр экрана {i} (m2m_frame_{i})"}):
+                            text_sensor.text_sensor_schema(icon="mdi:image-area", entity_category=ENTITY_CATEGORY_DIAGNOSTIC)
+                        for i in range(1, 5)
+                    },
+                    **{
+                        cv.Optional(k, default={"name": nm}): button.button_schema(LiveButton, icon=ic)
+                        for k, _, nm, ic in _BUTTONS
+                    },
+                    cv.Optional(CONF_SCREEN_TEXT, default={"name": "Текст экрана (m2m_screen)"}):
+                        text_sensor.text_sensor_schema(icon="mdi:text-box-outline",
+                                                       entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
+                }
+            ),
             **{cv.Optional(c[0]): c[1]() for c in CATALOG},
         }
     )
@@ -228,6 +262,21 @@ async def to_code(config):
     if CONF_FOUND_METERS in config:
         ts = await text_sensor.new_text_sensor(config[CONF_FOUND_METERS])
         cg.add(var.set_found_sensor(ts))
+    if CONF_LIVE_VIEW in config:
+        lv = config[CONF_LIVE_VIEW]
+        sw = await switch.new_switch(lv[CONF_SWITCH])
+        cg.add(sw.set_parent(var))
+        cg.add(var.set_live_switch(sw))
+        cg.add(var.set_live_timeout(lv[CONF_TIMEOUT]))
+        for i in range(1, 5):
+            ts = await text_sensor.new_text_sensor(lv[f"page_{i}"])
+            cg.add(var.set_page_sensor(i - 1, ts))
+        for k, code, _, _ in _BUTTONS:
+            b = await button.new_button(lv[k])
+            cg.add(b.set_parent(var))
+            cg.add(b.set_code(code))
+        ts = await text_sensor.new_text_sensor(lv[CONF_SCREEN_TEXT])
+        cg.add(var.set_screen_text_sensor(ts))
     for key, _, field, title, match, host, arg, live, _ in CATALOG:
         if key not in config:
             continue

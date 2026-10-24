@@ -50,6 +50,8 @@ m2m_display:
   ble_client_id: meter_ble
   update_interval: 1h        # как часто обходить экраны (обход — 2–3 минуты)
   report_unknown: true       # описания новых экранов и незнакомые знаки — в лог (для issue)
+  live_view:                 # «Живой экран» + кнопки для карточки m2m-display-card
+    timeout: 3min
   found_meters:
     name: Найденные счётчики (found)
 
@@ -96,26 +98,6 @@ button:
     icon: mdi:refresh
     on_press:
       - component.update: meter_display
-  - platform: template
-    name: Экран вправо
-    icon: mdi:chevron-right
-    on_press:
-      - lambda: id(meter_display).press(2);
-  - platform: template
-    name: Экран влево
-    icon: mdi:chevron-left
-    on_press:
-      - lambda: id(meter_display).press(1);
-  - platform: template
-    name: Экран долго влево
-    icon: mdi:chevron-double-left
-    on_press:
-      - lambda: id(meter_display).press(3);
-  - platform: template
-    name: Экран долго вправо (только безопасные экраны)
-    icon: mdi:chevron-double-right
-    on_press:
-      - lambda: id(meter_display).press(4);   # на экранах 15 (реле) и 1.7 (модем) не сработает
 
 sensor:
   - platform: template
