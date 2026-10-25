@@ -205,6 +205,7 @@ class M2MDisplay : public PollingComponent, public ble_client::BLEClientNode, pu
   uint32_t discovery_ms_{0};
   uint32_t found_log_ms_{0};
   uint32_t first_update_ms_{0};
+  bool resume_after_live_{false};
   std::string tariff_cand_;
   uint8_t tariff_cand_n_{0};
 

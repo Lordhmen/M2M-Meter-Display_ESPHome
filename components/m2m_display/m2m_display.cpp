@@ -255,7 +255,7 @@ void M2MDisplay::loop() {
 
   if (this->first_update_ms_ != 0 && (int32_t) (now - this->first_update_ms_) > 0) {
     this->first_update_ms_ = 0;
-    ESP_LOGI(TAG, "Первый обход экранов после включения");
+    ESP_LOGI(TAG, "Обход экранов по расписанию «через минуту»");
     this->update();
     return;  // `now` уже устарело относительно cycle_ms_ — проверки сторожа на следующем loop()
   }
@@ -802,6 +802,7 @@ void M2MDisplay::update() {
     return;
   if (this->live_) {
     ESP_LOGD(TAG, "Обход экранов отложен: включён живой экран");
+    this->resume_after_live_ = true;
     return;
   }
   this->cycle_no_++;
@@ -1087,12 +1088,20 @@ void M2MDisplay::set_live(bool on) {
     ESP_LOGI(TAG, "Живой экран включён");
     this->live_touch_();
     this->live_force_ = true;
-    if (this->cycling_)
+    if (this->cycling_) {
       this->finish_cycle_("включён живой экран");
+      this->resume_after_live_ = true;
+    }
     if (this->have_frame_)
       this->publish_live_(this->last_decoded_, true);
   } else {
     ESP_LOGI(TAG, "Живой экран выключен");
+    if (this->resume_after_live_) {
+      // обход был прерван или отложен из-за живого экрана — повторяем через минуту, а не через update_interval
+      this->resume_after_live_ = false;
+      this->first_update_ms_ = millis() + 60000 + 1;
+      ESP_LOGI(TAG, "Прерванный обход повторю через минуту");
+    }
   }
   if (this->live_switch_ != nullptr)
     this->live_switch_->publish_state(on);
