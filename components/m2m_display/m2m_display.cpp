@@ -146,6 +146,8 @@ void M2MDisplay::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t g
       this->ready_ = true;
       this->op_in_flight_ = false;
       this->node_state = espbt::ClientState::ESTABLISHED;
+      if (this->cycle_no_ == 0)
+        this->first_update_ms_ = millis() + 60000 + 1;  // первый обход — через минуту после подключения
       this->last_write_ms_ = millis();
       this->last_change_ms_ = millis();
       {
@@ -250,6 +252,13 @@ void M2MDisplay::loop() {
 
   if (!this->ready_)
     return;
+
+  if (this->first_update_ms_ != 0 && (int32_t) (now - this->first_update_ms_) > 0) {
+    this->first_update_ms_ = 0;
+    ESP_LOGI(TAG, "Первый обход экранов после включения");
+    this->update();
+    return;  // `now` уже устарело относительно cycle_ms_ — проверки сторожа на следующем loop()
+  }
 
   // сторож: на начальном экране время меняется каждую минуту; если картинка не меняется 3 минуты — она «застыла»
   if (this->have_frame_ && now - this->last_change_ms_ > 180000) {
@@ -613,7 +622,10 @@ bool M2MDisplay::parse_(const Entry &e, const ScreenData &s, float *num, std::st
 void M2MDisplay::read_values_(const ScreenData &s) {
   std::string bare = norm_(bare_title_(s.title));
   for (auto &e : this->entries_) {
-    if (e.visit == this->visit_ || !this->matches_(e, s, bare))
+    // тариф читаем на каждом кадре начального экрана (ESP стоит на нём почти всё время) —
+    // смена Т1/Т2 видна сразу, а не только при обходе
+    bool tariff = e.field == F_TARIFF;
+    if ((!tariff && e.visit == this->visit_) || !this->matches_(e, s, bare))
       continue;
     bool stable = this->same_count_ >= 2 || (e.live && this->key_count_ >= 2);
     if (!stable)
@@ -622,6 +634,21 @@ void M2MDisplay::read_values_(const ScreenData &s) {
     std::string t;
     if (!this->parse_(e, s, &v, &t))
       continue;
+    if (tariff && e.visit == this->visit_) {
+      // уже опубликован в этом посещении: публикуем только смену, подтверждённую 3 кадрами подряд
+      if (e.tsens == nullptr || e.tsens->state == t) {
+        this->tariff_cand_n_ = 0;
+        continue;
+      }
+      if (t != this->tariff_cand_) {
+        this->tariff_cand_ = t;
+        this->tariff_cand_n_ = 1;
+        continue;
+      }
+      if (++this->tariff_cand_n_ < 3)
+        continue;
+      ESP_LOGI(TAG, "Смена тарифа: %s -> %s", e.tsens->state.c_str(), t.c_str());
+    }
     if (e.key == "energy_import_total") {
       // защита от ошибки распознавания: показание не убывает и не прыгает больше чем на 50 кВт*ч
       if (!std::isnan(this->last_total_) && (v < this->last_total_ - 0.005f || v > this->last_total_ + 50.0f)) {
